@@ -242,7 +242,7 @@ func TokenAuth() func(c *gin.Context) {
 
 		allowIpsMap := token.GetIpLimitsMap()
 		if len(allowIpsMap) != 0 {
-			clientIp := c.ClientIP()
+			clientIp := common.RealClientIP(c)
 			if _, ok := allowIpsMap[clientIp]; !ok {
 				abortWithOpenAiMessage(c, http.StatusForbidden, "您的 IP 不在令牌允许访问的列表中")
 				return
