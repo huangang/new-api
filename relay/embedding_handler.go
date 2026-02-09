@@ -2,8 +2,8 @@ package relay
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/QuantumNous/new-api/common"
@@ -16,6 +16,16 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+func truncateForLog(s string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "...(truncated)"
+}
 
 func EmbeddingHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types.NewAPIError) {
 	info.InitChannelMeta(c)
@@ -46,7 +56,7 @@ func EmbeddingHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 	}
 	relaycommon.AppendRequestConversionFromRequest(info, convertedRequest)
-	jsonData, err := json.Marshal(convertedRequest)
+	jsonData, err := common.Marshal(convertedRequest)
 	if err != nil {
 		return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 	}
@@ -58,7 +68,13 @@ func EmbeddingHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		}
 	}
 
-	logger.LogDebug(c, fmt.Sprintf("converted embedding request body: %s", string(jsonData)))
+	// Keep this as debug to avoid leaking user input in production logs.
+	logger.LogDebug(c, fmt.Sprintf("converted embedding request body: %s", truncateForLog(string(jsonData), 4096)))
+
+	// Log target URL in debug for easier upstream tracing.
+	if url, urlErr := adaptor.GetRequestURL(info); urlErr == nil {
+		logger.LogDebug(c, fmt.Sprintf("embedding upstream url: %s", url))
+	}
 	requestBody := bytes.NewBuffer(jsonData)
 	statusCodeMappingStr := c.GetString("status_code_mapping")
 	resp, err := adaptor.DoRequest(c, info, requestBody)
@@ -70,6 +86,24 @@ func EmbeddingHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 	if resp != nil {
 		httpResp = resp.(*http.Response)
 		if httpResp.StatusCode != http.StatusOK {
+			// Add more diagnostics for upstream errors (esp. OpenRouter "No successful provider responses").
+			// NOTE: we must not lose the body because RelayErrorHandler needs it.
+			respBody, readErr := io.ReadAll(httpResp.Body)
+			if readErr == nil {
+				_ = httpResp.Body.Close()
+				httpResp.Body = io.NopCloser(bytes.NewReader(respBody))
+				logger.LogError(c, fmt.Sprintf(
+					"embedding upstream bad status: status=%d, channel_type=%d, channel_id=%d, model=%s, base_url=%s, request=%s, response=%s",
+					httpResp.StatusCode,
+					info.ChannelType,
+					info.ChannelId,
+					info.UpstreamModelName,
+					info.ChannelBaseUrl,
+					truncateForLog(string(jsonData), 4096),
+					truncateForLog(string(respBody), 8192),
+				))
+			}
+
 			newAPIError = service.RelayErrorHandler(c.Request.Context(), httpResp, false)
 			// reset status code 重置状态码
 			service.ResetStatusCode(newAPIError, statusCodeMappingStr)
