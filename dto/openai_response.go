@@ -412,6 +412,11 @@ func GetOpenAIError(errorField any) *types.OpenAIError {
 		if errCode, ok := err["code"]; ok {
 			openaiErr.Code = errCode
 		}
+		// Some upstreams (e.g., OpenRouter) omit the type field.
+		// When message is present, treat it as an upstream error.
+		if openaiErr.Type == "" && openaiErr.Message != "" {
+			openaiErr.Type = "upstream_error"
+		}
 		return openaiErr
 	case string:
 		// 处理简单字符串错误
