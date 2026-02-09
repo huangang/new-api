@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/types"
 )
 
@@ -411,6 +412,12 @@ func GetOpenAIError(errorField any) *types.OpenAIError {
 		}
 		if errCode, ok := err["code"]; ok {
 			openaiErr.Code = errCode
+		}
+		if meta, ok := err["metadata"]; ok {
+			// Best-effort: preserve OpenRouter's diagnostic metadata.
+			if metaBytes, mErr := common.Marshal(meta); mErr == nil {
+				openaiErr.Metadata = metaBytes
+			}
 		}
 		// Some upstreams (e.g., OpenRouter) omit the type field.
 		// When message is present, treat it as an upstream error.

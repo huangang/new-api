@@ -22,6 +22,16 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+func truncateForLog(s string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "...(truncated)"
+}
+
 func sendStreamData(c *gin.Context, info *relaycommon.RelayInfo, data string, forceFormat bool, thinkToContent bool) error {
 	if data == "" {
 		return nil
@@ -226,6 +236,18 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 	}
 
 	if oaiError := simpleResponse.GetOpenAIError(); oaiError != nil && oaiError.Type != "" {
+		// In k8s/proxy scenarios debug logs are often disabled; keep a concise error log
+		// to help diagnose upstream routing issues (e.g. OpenRouter provider failures).
+		if info != nil && info.ChannelType == constant.ChannelTypeOpenRouter {
+			upstreamURL := fmt.Sprintf("%s%s", info.ChannelBaseUrl, info.RequestURLPath)
+			logger.LogError(c, fmt.Sprintf(
+				"openrouter upstream error: status=%d, model=%s, url=%s, body=%s",
+				resp.StatusCode,
+				info.UpstreamModelName,
+				upstreamURL,
+				truncateForLog(string(responseBody), 8192),
+			))
+		}
 		return nil, types.WithOpenAIError(*oaiError, resp.StatusCode)
 	}
 
