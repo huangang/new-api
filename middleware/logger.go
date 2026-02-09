@@ -18,7 +18,15 @@ func SetUpLogger(server *gin.Engine) {
 			requestID,
 			param.StatusCode,
 			param.Latency,
-			param.ClientIP,
+			func() string {
+				if param.Request == nil {
+					return param.ClientIP
+				}
+				if ip := common.RealClientIPFromRequest(param.Request); ip != "" {
+					return ip
+				}
+				return param.ClientIP
+			}(),
 			param.Method,
 			param.Path,
 		)

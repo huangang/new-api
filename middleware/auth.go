@@ -295,14 +295,14 @@ func TokenAuth() func(c *gin.Context) {
 
 		allowIps := token.GetIpLimits()
 		if len(allowIps) > 0 {
-			clientIp := c.ClientIP()
+			clientIp := common.RealClientIP(c)
 			logger.LogDebug(c, "Token has IP restrictions, checking client IP %s", clientIp)
 			ip := net.ParseIP(clientIp)
 			if ip == nil {
 				abortWithOpenAiMessage(c, http.StatusForbidden, "无法解析客户端 IP 地址")
 				return
 			}
-			if common.IsIpInCIDRList(ip, allowIps) == false {
+			if !common.IsIpInCIDRList(ip, allowIps) {
 				abortWithOpenAiMessage(c, http.StatusForbidden, "您的 IP 不在令牌允许访问的列表中", types.ErrorCodeAccessDenied)
 				return
 			}
