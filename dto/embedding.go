@@ -1,6 +1,7 @@
 package dto
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/QuantumNous/new-api/types"
@@ -20,16 +21,17 @@ type EmbeddingOptions struct {
 }
 
 type EmbeddingRequest struct {
-	Model            string   `json:"model"`
-	Input            any      `json:"input"`
-	EncodingFormat   string   `json:"encoding_format,omitempty"`
-	Dimensions       int      `json:"dimensions,omitempty"`
-	User             string   `json:"user,omitempty"`
-	Seed             float64  `json:"seed,omitempty"`
-	Temperature      *float64 `json:"temperature,omitempty"`
-	TopP             float64  `json:"top_p,omitempty"`
-	FrequencyPenalty float64  `json:"frequency_penalty,omitempty"`
-	PresencePenalty  float64  `json:"presence_penalty,omitempty"`
+	Model            string          `json:"model"`
+	Input            any             `json:"input"`
+	EncodingFormat   string          `json:"encoding_format,omitempty"`
+	Dimensions       int             `json:"dimensions,omitempty"`
+	Provider         json.RawMessage `json:"provider,omitempty"` // OpenRouter provider routing
+	User             string          `json:"user,omitempty"`
+	Seed             float64         `json:"seed,omitempty"`
+	Temperature      *float64        `json:"temperature,omitempty"`
+	TopP             float64         `json:"top_p,omitempty"`
+	FrequencyPenalty float64         `json:"frequency_penalty,omitempty"`
+	PresencePenalty  float64         `json:"presence_penalty,omitempty"`
 }
 
 func (r *EmbeddingRequest) GetTokenCountMeta() *types.TokenCountMeta {

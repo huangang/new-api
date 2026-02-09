@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -315,6 +316,12 @@ func NewErrorWithStatusCode(err error, errorCode ErrorCode, statusCode int, ops 
 }
 
 func WithOpenAIError(openAIError OpenAIError, statusCode int, ops ...NewAPIErrorOptions) *NewAPIError {
+	if statusCode < http.StatusBadRequest {
+		if derivedStatusCode, ok := deriveHTTPStatusCodeFromOpenAIError(openAIError.Code); ok {
+			statusCode = derivedStatusCode
+		}
+	}
+
 	code, ok := openAIError.Code.(string)
 	if !ok {
 		if openAIError.Code != nil {
@@ -344,6 +351,47 @@ func WithOpenAIError(openAIError OpenAIError, statusCode int, ops ...NewAPIError
 		op(e)
 	}
 	return e
+}
+
+func deriveHTTPStatusCodeFromOpenAIError(code any) (int, bool) {
+	if code == nil {
+		return 0, false
+	}
+
+	var statusCode int
+	switch v := code.(type) {
+	case int:
+		statusCode = v
+	case int32:
+		statusCode = int(v)
+	case int64:
+		statusCode = int(v)
+	case float64:
+		// JSON numbers are decoded as float64.
+		statusCode = int(v)
+		if float64(statusCode) != v {
+			return 0, false
+		}
+	case json.Number:
+		i, err := v.Int64()
+		if err != nil {
+			return 0, false
+		}
+		statusCode = int(i)
+	case string:
+		i, err := strconv.Atoi(strings.TrimSpace(v))
+		if err != nil {
+			return 0, false
+		}
+		statusCode = i
+	default:
+		return 0, false
+	}
+
+	if statusCode >= http.StatusBadRequest && statusCode <= http.StatusNetworkAuthenticationRequired {
+		return statusCode, true
+	}
+	return 0, false
 }
 
 func WithClaudeError(claudeError ClaudeError, statusCode int, ops ...NewAPIErrorOptions) *NewAPIError {
