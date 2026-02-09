@@ -1,6 +1,7 @@
 package common
 
 import (
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -40,6 +41,18 @@ func RealClientIPFromRequest(req *http.Request) string {
 		return ""
 	}
 	remoteIP := parseRemoteIP(req.RemoteAddr)
+
+	if os.Getenv("DEBUG_CLIENT_IP") == "true" {
+		SysLog(fmt.Sprintf("[DEBUG-IP] RemoteAddr=%s, ParsedIP=%v, X-Forwarded-For=%s, X-Real-IP=%s, CF-Connecting-IP=%s, IsTrusted=%v",
+			req.RemoteAddr,
+			remoteIP,
+			req.Header.Get("X-Forwarded-For"),
+			req.Header.Get("X-Real-IP"),
+			req.Header.Get("CF-Connecting-IP"),
+			remoteIP != nil && isTrustedProxyIP(remoteIP),
+		))
+	}
+
 	if remoteIP != nil && isTrustedProxyIP(remoteIP) {
 		for _, header := range []string{"X-Forwarded-For", "X-Real-IP", "CF-Connecting-IP"} {
 			if ip := pickForwardedIP(req.Header.Get(header)); ip != "" {
