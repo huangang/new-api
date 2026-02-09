@@ -27,7 +27,9 @@ import (
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
+	sessionredis "github.com/gin-contrib/sessions/redis"
 	"github.com/gin-gonic/gin"
+	redigo "github.com/gomodule/redigo/redis"
 	"github.com/joho/godotenv"
 
 	_ "net/http/pprof"
@@ -160,7 +162,23 @@ func main() {
 	server.Use(middleware.I18n())
 	middleware.SetUpLogger(server)
 	// Initialize session store
-	store := cookie.NewStore([]byte(common.SessionSecret))
+	var store sessions.Store
+	if common.RedisEnabled {
+		redisStore, err := newRedisSessionStore([]byte(common.SessionSecret))
+		if err != nil {
+			common.SysError("failed to initialize Redis session store, falling back to cookie store: " + err.Error())
+			store = cookie.NewStore([]byte(common.SessionSecret))
+		} else {
+			if err := sessionredis.SetKeyPrefix(redisStore, "newapi:session:"); err != nil {
+				common.SysError("failed to set Redis session key prefix: " + err.Error())
+			}
+			store = redisStore
+			common.SysLog("session store: redis")
+		}
+	} else {
+		store = cookie.NewStore([]byte(common.SessionSecret))
+		common.SysLog("session store: cookie")
+	}
 	store.Options(sessions.Options{
 		Path:     "/",
 		MaxAge:   2592000, // 30 days
@@ -187,6 +205,47 @@ func main() {
 	if err != nil {
 		common.FatalLog("failed to start HTTP server: " + err.Error())
 	}
+}
+
+func newRedisSessionStore(secret []byte) (sessions.Store, error) {
+	poolSize := common.GetEnvOrDefault("REDIS_POOL_SIZE", 10)
+	redisOpt := common.ParseRedisOption()
+
+	dialOptions := make([]redigo.DialOption, 0)
+	if redisOpt.DialTimeout > 0 {
+		dialOptions = append(dialOptions, redigo.DialConnectTimeout(redisOpt.DialTimeout))
+	}
+	if redisOpt.ReadTimeout > 0 {
+		dialOptions = append(dialOptions, redigo.DialReadTimeout(redisOpt.ReadTimeout))
+	}
+	if redisOpt.WriteTimeout > 0 {
+		dialOptions = append(dialOptions, redigo.DialWriteTimeout(redisOpt.WriteTimeout))
+	}
+	if redisOpt.Password != "" {
+		dialOptions = append(dialOptions, redigo.DialPassword(redisOpt.Password))
+		if redisOpt.Username != "" {
+			dialOptions = append(dialOptions, redigo.DialUsername(redisOpt.Username))
+		}
+	}
+	if redisOpt.DB != 0 {
+		dialOptions = append(dialOptions, redigo.DialDatabase(redisOpt.DB))
+	}
+	if redisOpt.TLSConfig != nil {
+		dialOptions = append(dialOptions, redigo.DialUseTLS(true), redigo.DialTLSConfig(redisOpt.TLSConfig))
+	}
+
+	pool := &redigo.Pool{
+		MaxIdle:     poolSize,
+		IdleTimeout: 240 * time.Second,
+		Dial: func() (redigo.Conn, error) {
+			return redigo.Dial(redisOpt.Network, redisOpt.Addr, dialOptions...)
+		},
+		TestOnBorrow: func(conn redigo.Conn, _ time.Time) error {
+			_, err := conn.Do("PING")
+			return err
+		},
+	}
+	return sessionredis.NewStoreWithPool(pool, secret)
 }
 
 func InjectUmamiAnalytics() {
@@ -256,6 +315,12 @@ func InitResources() error {
 	err = model.InitDB()
 	if err != nil {
 		common.FatalLog("failed to initialize database: " + err.Error())
+		return err
+	}
+
+	err = model.EnsurePersistentSecrets()
+	if err != nil {
+		common.FatalLog("failed to initialize persistent secrets: " + err.Error())
 		return err
 	}
 
