@@ -25,7 +25,8 @@ type EmbeddingRequest struct {
 	Input            any             `json:"input"`
 	EncodingFormat   string          `json:"encoding_format,omitempty"`
 	Dimensions       int             `json:"dimensions,omitempty"`
-	Provider         json.RawMessage `json:"provider,omitempty"` // OpenRouter provider routing
+	Provider         json.RawMessage `json:"provider,omitempty"`   // OpenRouter provider routing
+	InputType        string          `json:"input_type,omitempty"` // OpenRouter & Cohere embeddings
 	User             string          `json:"user,omitempty"`
 	Seed             float64         `json:"seed,omitempty"`
 	Temperature      *float64        `json:"temperature,omitempty"`
